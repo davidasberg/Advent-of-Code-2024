@@ -13,7 +13,7 @@ main :: proc() {
 }
 
 get_input :: proc() -> string {
-	data, ok := os.read_entire_file("example.txt", context.allocator)
+	data, ok := os.read_entire_file("input.txt", context.allocator)
 	if !ok {
 		fmt.println("could not read file")
 		return ""
@@ -76,7 +76,9 @@ check_word_in_direction :: proc(
 			return false
 		}
 
-		if grid[x][y] != rune(word[k]) {
+		cell := grid[x][y]
+		expected := rune(word[k])
+		if cell != expected {
 			return false
 		}
 	}
@@ -105,8 +107,8 @@ check_for_x_word :: proc(x: int, y: int, word: string, grid: [][]rune) -> bool {
 				index = len(word) - 1 - i
 			}
 
-			row := x + i
-			col := y + i * (reverse_dir ? -1 : 1)
+			row := y + i
+			col := x + i * (reverse_dir ? -1 : 1)
 			if row < 0 || row >= grid_width {
 				return false
 			}
@@ -117,23 +119,20 @@ check_for_x_word :: proc(x: int, y: int, word: string, grid: [][]rune) -> bool {
 
 
 			cell := grid[row][col]
-			cell_as_string: string = utf8.runes_to_string([]rune{cell})
-
 			expected := rune(word[index])
-			expected_as_string: string = utf8.runes_to_string([]rune{expected})
 
-			if strings.compare(cell_as_string, expected_as_string) != 0 {
+			if cell != expected {
 				return false
 			}
 		}
-		fmt.println("x word found at ", x, y)
 		return true
 	}
-
-	if check_diagonal(x, y, false, false, word, grid) ||
-	   check_diagonal(x, y, false, true, word, grid) &&
-		   check_diagonal(x + len(word) - 1, y, true, false, word, grid) ||
-	   check_diagonal(x + len(word) - 1, y, true, true, word, grid) {
+	a := check_diagonal(x, y, false, false, word, grid)
+	b := check_diagonal(x, y, false, true, word, grid)
+	c := check_diagonal(x + len(word) - 1, y, true, false, word, grid)
+	d := check_diagonal(x + len(word) - 1, y, true, true, word, grid)
+	if (a || b) && (c || d) {
+		fmt.println("x word found at x: ", x, " y: ", y)
 		return true
 	}
 
