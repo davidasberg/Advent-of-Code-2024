@@ -14,16 +14,6 @@ impl From<(i32, i32)> for IVec2d {
     }
 }
 
-impl IVec2d {
-    fn distance(&self, other: IVec2d) -> i32 {
-        (self.x - other.x).abs() + (self.y - other.y).abs()
-    }
-
-    fn len(&self) -> i32 {
-        self.x.abs() + self.y.abs()
-    }
-}
-
 impl std::ops::Add for IVec2d {
     type Output = IVec2d;
 
@@ -97,7 +87,7 @@ fn parse_input(input: &str) -> (Vec<Antenna>, IVec2d) {
 }
 
 fn check_antinodes(antennas: &Vec<Antenna>, map_size: IVec2d, simple: bool) -> i32 {
-    let antinode_count = antennas
+    let antinodes = antennas
         .iter()
         .cartesian_product(antennas)
         .filter_map(|(a1, a2)| {
@@ -117,7 +107,7 @@ fn check_antinodes(antennas: &Vec<Antenna>, map_size: IVec2d, simple: bool) -> i
                     anti_nodes.push(anti_node);
                 }
             } else {
-                let mut anti_node = a2.pos + a1_a2;
+                let mut anti_node = a2.pos;
                 while is_inside_map(anti_node) {
                     anti_nodes.push(anti_node);
                     anti_node = anti_node + a1_a2;
@@ -128,10 +118,24 @@ fn check_antinodes(antennas: &Vec<Antenna>, map_size: IVec2d, simple: bool) -> i
             }
             Some(anti_nodes)
         })
+        .flatten()
         .unique()
-        .count() as i32;
+        .collect::<Vec<IVec2d>>();
 
-    antinode_count
+    for y in 0..map_size.y {
+        for x in 0..map_size.x {
+            if antinodes.contains(&(x, y).into()) {
+                print!("#");
+            } else if let Some(a) = antennas.iter().find(|a| a.pos == (x, y).into()) {
+                print!("{}", a.frequency_id);
+            } else {
+                print!(".");
+            }
+        }
+        println!();
+    }
+
+    antinodes.len() as i32
 }
 
 fn part01() {
@@ -143,7 +147,7 @@ fn part01() {
 }
 
 fn part02() {
-    let input = get_input("example.txt");
+    let input = get_input("input.txt");
     let (antennas, map_size) = parse_input(&input);
     let antinode_count = check_antinodes(&antennas, map_size, false);
 
