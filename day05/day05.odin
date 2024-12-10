@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:os"
+import "core:slice"
 import "core:sort"
 import "core:strconv"
 import "core:strings"
@@ -85,23 +86,53 @@ check_page :: proc(
 	return middle, true
 }
 
+Page_Updates :: struct {
+	pages:          [dynamic]int,
+	ordering_rules: map[int][dynamic]int,
+}
+
 fix_page :: proc(page_section: [dynamic]int, ordering_rules: map[int][dynamic]int) {
-    
+
+	page_updates := Page_Updates {
+		pages          = page_section,
+		ordering_rules = ordering_rules,
+	}
+
 	it := sort.Interface {
 		len = proc(it: sort.Interface) -> int {
-			page_section := cast(^[]int)it.collection
-			return len(page_section)
+			page_updates := cast(^Page_Updates)it.collection
+			return len(page_updates.pages)
 		},
 		less = proc(it: sort.Interface, i, j: int) -> bool {
-			page_section := cast(^[]int)it.collection
+			page_section := cast(^Page_Updates)it.collection
 
+			i_value := page_section.pages[i]
+			j_value := page_section.pages[j]
+
+			i_rules := page_section.ordering_rules[i_value]
+			j_rules := page_section.ordering_rules[j_value]
+
+			i_has_j := slice.contains(i_rules[:], j_value)
+			j_has_i := slice.contains(j_rules[:], i_value)
+
+			if i_has_j {
+				return true
+			}
+
+			if j_has_i {
+				return false
+			}
+
+			return page_section.pages[i] < page_section.pages[j]
 		},
 		swap = proc(it: sort.Interface, i, j: int) {
-			page_section := cast(^[]int)it.collection
-			page_section[i], page_section[j] = page_section[j], page_section[i]
+			page_section := cast(^Page_Updates)it.collection
+			page_section.pages[i], page_section.pages[j] =
+				page_section.pages[j], page_section.pages[i]
 		},
-		collection = &page_section,
+		collection = &page_updates,
 	}
+
 	sort.sort(it)
 }
 
@@ -111,6 +142,8 @@ part01 :: proc() {
 	ordering_rules := parse_rules(rules)
 
 	page_sections := parse_sections(sections)
+	fmt.println(ordering_rules)
+	fmt.println(page_sections)
 	sum := 0
 	for page_section in page_sections {
 		middle, ok := check_page(page_section, ordering_rules)
@@ -129,12 +162,11 @@ part02 :: proc() {
 	ordering_rules := parse_rules(rules)
 
 	page_sections := parse_sections(sections)
+	defer delete(page_sections)
 	sum := 0
-	for page_section in page_sections {
+	for page_section, i in page_sections {
 		middle, ok := check_page(page_section, ordering_rules)
-		if ok {
-			sum += middle
-		} else {
+		if !ok {
 			fix_page(page_section, ordering_rules)
 			middle, ok := check_page(page_section, ordering_rules)
 			if ok {
@@ -144,4 +176,6 @@ part02 :: proc() {
 			}
 		}
 	}
+
+	fmt.println(sum)
 }
