@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::Hash,
     ops::Deref,
+    time::Duration,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -47,6 +48,20 @@ impl std::ops::Add for IVec2 {
 
 #[derive(Debug, Clone)]
 struct Map(Vec<Vec<PlantId>>);
+
+impl Map {
+    fn get(&self, pos: IVec2) -> Option<PlantId> {
+        if self.is_within_bounds(pos) {
+            Some(self[pos.y as usize][pos.x as usize])
+        } else {
+            None
+        }
+    }
+
+    fn is_within_bounds(&self, pos: IVec2) -> bool {
+        pos.x >= 0 && pos.x < self[0].len() as i32 && pos.y >= 0 && pos.y < self.len() as i32
+    }
+}
 
 impl Deref for Map {
     type Target = Vec<Vec<PlantId>>;
@@ -108,6 +123,15 @@ fn get_neighbors_checked(cell: IVec2, map: &Map) -> Vec<IVec2> {
         neighbors.push(IVec2::new(cell.x, cell.y + 1));
     }
     neighbors
+}
+
+fn get_diagonal_neighbors(cell: IVec2) -> Vec<IVec2> {
+    vec![
+        IVec2::new(cell.x - 1, cell.y - 1),
+        IVec2::new(cell.x + 1, cell.y - 1),
+        IVec2::new(cell.x - 1, cell.y + 1),
+        IVec2::new(cell.x + 1, cell.y + 1),
+    ]
 }
 
 fn find_regions(map: &Map) -> Vec<Region> {
@@ -177,104 +201,33 @@ fn calc_perimeter(region: &Region, map: &Map) -> i32 {
     perimeter
 }
 
-enum SideDir {
-    Vertical,
-    Horizontal,
-}
-
-impl From<IVec2> for SideDir {
-    fn from(v: IVec2) -> Self {
-        if v.x == 0 {
-            SideDir::Horizontal
-        } else {
-            SideDir::Vertical
-        }
-    }
-}
-
-#[derive(Clone, Eq, Hash, PartialEq)]
-struct Side {
-    start: IVec2,
-    end: IVec2,
-}
-
-impl Side {
-    fn contains(&self, cell: IVec2) -> bool {
-        self.start.x <= cell.x
-            && cell.x <= self.end.x
-            && self.start.y <= cell.y
-            && cell.y <= self.end.y
-    }
-
-    fn add_cell(&mut self, cell: &IVec2) {
-        if cell.x < self.start.x {
-            self.start.x = cell.x;
-        }
-        if cell.x > self.end.x {
-            self.end.x = cell.x;
-        }
-        if cell.y < self.start.y {
-            self.start.y = cell.y;
-        }
-        if cell.y > self.end.y {
-            self.end.y = cell.y;
-        }
-    }
-
-    fn merge(&mut self, other: &Side) {
-        self.start.x = min(self.start.x, other.start.x);
-        self.end.x = max(self.end.x, other.end.x);
-        self.start.y = min(self.start.y, other.start.y);
-        self.end.y = max(self.end.y, other.end.y);
-    }
-}
-
 fn count_sides(region: &Region, map: &Map) -> i32 {
-    let mut sides: Vec<Side> = Vec::new();
+    // number of sides is equal to number of corners
+    // a corner is a cell where there is 1 or 3 neighboring cells
+    let mut sides = 0;
+    let mut corners = vec![vec![0; map[0].len()]; map.len()];
     for &cell in &region.locations {
-        for neighbor in get_neighbors(cell) {
-            // if out of bounds, its perimeter
-            // or if the neighbor is not the same as the region
-            if neighbor.y < 0
-                || neighbor.y >= map.len() as i32
-                || neighbor.x < 0
-                || neighbor.x >= map[0].len() as i32
-                || region.plant_id != map[neighbor.y as usize][neighbor.x as usize]
+        for diagonal in get_diagonal_neighbors(cell) {
+            let diagonal_is_same_region = map.is_within_bounds(diagonal)
+                && map[diagonal.y as usize][diagonal.x as usize] == region.plant_id;
+
+            let n1 = IVec2::new(cell.x, diagonal.y);
+            let n2 = IVec2::new(diagonal.x, cell.y);
+
+            let n1_same_region =
+                map.is_within_bounds(n1) && map[n1.y as usize][n1.x as usize] == region.plant_id;
+            let n2_same_region =
+                map.is_within_bounds(n2) && map[n2.y as usize][n2.x as usize] == region.plant_id;
+
+            if (n1_same_region && n2_same_region && !diagonal_is_same_region)
+                || (!n1_same_region && !n2_same_region)
             {
-                let dir = (neighbor - cell).into();
-
-                let dir = match dir {
-                    SideDir::Vertical => IVec2::new(0, 1),
-                    SideDir::Horizontal => IVec2::new(1, 0),
-                };
-                let mut sides_mut = sides.iter_mut();
-                let above = sides_mut.find(|s| s.contains(neighbor - dir));
-
-                let below = sides_mut.find(|s| s.contains(neighbor + dir));
-
-                match (above, below) {
-                    (Some(a), Some(b)) => {
-                        a.merge(b);
-                        sides.remove(sides.iter().position(|s| s == b).unwrap());
-                    }
-                    (Some(a), None) => {
-                        a.add_cell(&(neighbor - dir));
-                    }
-                    (None, Some(b)) => {
-                        b.add_cell(&(neighbor + dir));
-                    }
-                    (None, None) => {
-                        sides.push(Side {
-                            start: neighbor,
-                            end: neighbor,
-                        });
-                    }
-                }
+                corners[cell.y as usize][cell.x as usize] += 1;
+                sides += 1;
             }
         }
     }
-
-    sides.len() as i32
+    sides
 }
 
 fn calc_area(region: &Region) -> i32 {
@@ -311,7 +264,7 @@ fn part01() {
 }
 
 fn part02() {
-    let input = get_input("example.txt");
+    let input = get_input("input.txt");
     let map = parse_input(&input);
 
     let regions = find_regions(&map);
