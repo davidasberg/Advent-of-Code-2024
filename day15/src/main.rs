@@ -1,5 +1,8 @@
 use core::fmt;
-use std::ops::{Add, Sub};
+use std::{
+    cell,
+    ops::{Add, Sub},
+};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 enum Object {
@@ -58,6 +61,7 @@ impl Sub for IVec2 {
     }
 }
 
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 enum Dir {
     Up,
     Down,
@@ -74,6 +78,15 @@ impl Dir {
             Dir::Right => IVec2::new(1, 0),
         }
     }
+
+    fn reverse(&self) -> Dir {
+        match self {
+            Dir::Up => Dir::Down,
+            Dir::Down => Dir::Up,
+            Dir::Left => Dir::Right,
+            Dir::Right => Dir::Left,
+        }
+    }
 }
 
 impl fmt::Debug for Dir {
@@ -87,6 +100,7 @@ impl fmt::Debug for Dir {
     }
 }
 
+#[derive(Clone)]
 struct Map {
     map: Vec<Vec<Object>>,
     robot_pos: IVec2,
@@ -111,6 +125,64 @@ impl Map {
     fn set(&mut self, pos: IVec2, object: Object) {
         assert!(self.is_within_bounds(pos));
         self.map[pos.y as usize][pos.x as usize] = object;
+    }
+
+    // fn can_move_cell(&self, cell: IVec2, dir: Dir) -> bool {
+    //     let new_cell = cell + dir.to_vec();
+
+    //     match self.get(cell) {
+    //         Some(Object::Empty) => true,
+    //         Some(Object::Box) | Some(Object::Robot) => self.can_move_cell(new_cell, dir),
+    //         Some(Object::RightBox) => {
+    //             self.can_move_cell(new_cell, dir)
+    //                 && self.can_move_cell(new_cell + IVec2::new(-1, 0), dir)
+    //         }
+    //         Some(Object::LeftBox) => {
+    //             self.can_move_cell(new_cell, dir)
+    //                 && self.can_move_cell(new_cell + IVec2::new(1, 0), dir)
+    //         }
+    //         Some(Object::Wall) => false,
+    //         None => false,
+    //     }
+    // }
+
+    fn try_move_cell(&mut self, cell: IVec2, dir: Dir) -> bool {
+        let new_cell = cell + dir.to_vec();
+        let cell_obj = self.get(cell);
+        // println!("trying to move {:?} {:?}", cell_obj, dir);
+
+        let mut new_map = self.clone();
+
+        let cell_obj = match cell_obj {
+            Some(Object::Wall) | Some(Object::Empty) | None => return false,
+            _ => cell_obj.unwrap(),
+        };
+
+        let can_move = match new_map.get(new_cell) {
+            Some(Object::Empty) => true,
+            Some(Object::Robot) => new_map.try_move_cell(new_cell, dir),
+            Some(Object::Box) => new_map.try_move_cell(new_cell, dir),
+            Some(Object::RightBox) => {
+                new_map.try_move_cell(new_cell + IVec2::new(-1, 0), dir)
+                    && new_map.try_move_cell(new_cell, dir)
+            }
+            Some(Object::LeftBox) => {
+                new_map.try_move_cell(new_cell + IVec2::new(1, 0), dir)
+                    && new_map.try_move_cell(new_cell, dir)
+            }
+            Some(Object::Wall) => false,
+            None => false,
+        };
+
+        if can_move {
+            new_map.set(cell, Object::Empty);
+            new_map.set(new_cell, cell_obj);
+            new_map.robot_pos = new_cell;
+            *self = new_map;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -206,63 +278,15 @@ fn parse_input(input: &str, scaled: bool) -> (Map, Vec<Dir>) {
     (map, instructions)
 }
 
-fn move_cell(cell: IVec2, dir: Dir, map: &mut Map) -> bool {
-    let new_pos = cell + dir.to_vec();
-
-    if let (Some(cell_object), Some(new_object)) = (map.get(cell), map.get(new_pos)) {
-        println!(
-            "moving {:?} {:?} from {:?} to {:?}",
-            dir, cell_object, cell, new_pos
-        );
-        match new_object {
-            Object::Empty => {
-                match cell_object {
-                    Object::Robot => {
-                        map.set(cell, Object::Empty);
-                        map.set(new_pos, Object::Robot);
-                        map.robot_pos = new_pos
-                    }
-                    Object::Box => {
-                        map.set(new_pos, Object::Box);
-                        map.set(cell, Object::Empty);
-                    }
-                    Object::LeftBox => {
-                        map.set(new_pos, Object::LeftBox);
-                        map.set(cell, Object::RightBox);
-                    }
-                    Object::RightBox => {
-                        map.set(new_pos, Object::RightBox);
-                        map.set(cell, Object::LeftBox);
-                    }
-                    _ => (),
-                }
-                return true;
-            }
-            Object::Box | Object::RightBox | Object::LeftBox => {
-                if move_cell(new_pos, dir, map) {
-                    map.set(cell, Object::Empty);
-                    map.set(new_pos, cell_object);
-                    if cell_object == Object::Robot {
-                        map.robot_pos = new_pos;
-                    }
-                    return true;
-                }
-            }
-            Object::Wall => (),
-            Object::Robot => unreachable!(),
-        }
-    }
-    false
-}
-
 fn part01() {
-    let input = get_input("example.txt");
+    let input = get_input("input.txt");
 
     let (mut map, instructions) = parse_input(&input, false);
 
+    println!("{:?}", map);
     for instruction in instructions {
-        move_cell(map.robot_pos, instruction, &mut map);
-        println!("{:?}", map);
+        map.try_move_cell(map.robot_pos, instruction);
+        // println!("{:?}", map);
     }
 
     let mut boxes: Vec<IVec2> = Vec::new();
@@ -277,24 +301,17 @@ fn part01() {
     let sum = boxes.iter().map(|IVec2 { x, y }| y * 100 + x).sum::<i32>();
 
     println!("{}", sum);
-    // for y in 0..map.map.len() {
-    //     for x in 0..map.map[y].len() {
-    //         print!("{:?}", map.map[y][x]);
-    //     }
-    //     println!();
-    // }
-
-    // println!("{:?}", instructions);
 }
 
 fn part02() {
-    let input = get_input("example.txt");
+    let input = get_input("input.txt");
 
     let (mut map, instructions) = parse_input(&input, true);
 
+    println!("{:?}", map);
     for instruction in instructions {
-        move_cell(map.robot_pos, instruction, &mut map);
-        println!("{:?}", map);
+        map.try_move_cell(map.robot_pos, instruction);
+        // println!("{:?}", map);
     }
 
     let mut boxes: Vec<IVec2> = Vec::new();
